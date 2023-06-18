@@ -1,6 +1,9 @@
 # include<bits/stdc++.h>
 # include<sys/stat.h>
+# include <getopt.h>
+
 using namespace std;
+
 # define bug puts("H");
 # define SZ(x) (int)x.size()
 # define pb push_back
@@ -11,11 +14,32 @@ using namespace std;
 # define per(i,a,n) for (int i=a; i>=n; --i)
 # define all(x) (x).begin(), (x).end()
 # define INF 1000000000
+namespace fs = __fs::filesystem;
 typedef vector<int> Vi;
 typedef pair<int, int> Pi;
+typedef tuple<string, string> Ts;
 
-const string input_folder = "./input", output_folder = "./output", temp_folder = "./temp";
-string qcontig_file, rcontig_file;
+
+void print_help() {
+    printf("Usage: ./program [OPTIONS] qcontig_filename rcontig_name\n\n\
+            Options:\n\
+            -i input_folder   overwrite the input folder (default: ./input)\n\
+            -o output_folder  Overwrite the output folder (default: ./output)\n\
+            -t temp_folder    overwrite the temporary folder (default: ./temp)\n\
+            Description:\n\
+            Merging assemblies by using adjacency algebraic\n\
+            model and classification. This program operates\n\
+            only on two files, additional files will be ignored.\n\
+            Citation:\n\
+            Tang L, Li M, Wu F-X, Pan Y and Wang J (2020)\n\
+            MAC: Merging Assemblies by Using Adjacency\n\
+            Algebraic Model and Classification. Front.\n\
+            Genet. 10:1396. doi: 10.3389/fgene.2019.01396\n\
+            Copyright © 2023 <bioinfomaticsCSU>\n");
+    exit(0);
+}
+
+//globals
 struct Gene{int l1, r1, l2, r2, id;};
 vector<Gene> gene;
 vector<Vi> qcontig, rcontig;
@@ -24,29 +48,52 @@ vector<bool> qtelo, rtelo, vis;
 vector<string> contig;
 int q_size = -1, r_size = -1, gene_num = 0;
 
-void checkFile(int argc, char * argv[]) {
-    if (argc != 3) {
-        puts("error: Wrong number of parameters!");
-        exit(0);
+string getFileExtension(const std::string& filename) {
+    size_t dotPos = filename.find_last_of(".");
+    if (dotPos == std::string::npos) {
+        return ""; // no extension found
     }
-    qcontig_file = argv[1]; rcontig_file = argv[2];
+    return filename.substr(dotPos + 1);
+}
+
+void verifyInput(int argc, string qcontig_file, string rcontig_file, string input_folder) {
+    if (argc < 3) {
+        puts("Not enough arguments");
+        exit(1);
+    }
     int qlen = SZ(qcontig_file), rlen = SZ(rcontig_file);
-    if (qlen <= 3 || rlen <= 3 || qcontig_file.substr(qlen-3, 3) != ".fa" || rcontig_file.substr(rlen-3, 3) != ".fa") {
-        puts("error: Parameters format error!");
+    string qext= getFileExtension(qcontig_file), rext = getFileExtension(rcontig_file);
+    if (qlen <= 3 || rlen <= 3) {
+        puts("error: contig file name too short!");
+        exit(1);
+    }
+    if ((qext != "fa" && qext != "fasta") || (rext != "fa" && rext != "fasta" )) {
+        string errorstr = "error: unexpected contig file extention: " + qext + " or " + rext + "!";
+        puts(errorstr.c_str());
+        exit(1);
+    };
+    string qcontig_fileLOC = input_folder + "/" + qcontig_file, rcontig_fileLOC = input_folder + "/" + rcontig_file;
+    struct stat buffer;
+    int r = stat(qcontig_fileLOC.c_str(), &buffer);
+    if (r == -1 ){
+        cerr << "Error: query " << qcontig_file << " does not exist in input folder!" << endl;
         exit(0);
     }
-    qcontig_file = input_folder + "/" + qcontig_file; rcontig_file = input_folder + "/" + rcontig_file;
-    struct stat buffer;
-    if (stat(qcontig_file.c_str(), &buffer) || stat(rcontig_file.c_str(), &buffer)) {
-        puts("error: Contig File does not exist!");
+    r = stat(rcontig_fileLOC.c_str(), &buffer);
+    if (r == -1) {
+        cerr << "Error: reference" << rcontig_file << " does not exist in input folder" << endl;
         exit(0);
     }
 }
 
-void cleanContig() {
-    ifstream in1(qcontig_file.c_str()), in2(rcontig_file.c_str());
-    qcontig_file += ".fasta"; rcontig_file += ".fasta";
-    ofstream out1(qcontig_file.c_str()), out2(rcontig_file.c_str());
+//returns transformed files in tmpfolder
+Ts sanitizeContig(string qcontig_loc, string rcontig_loc,  string temp_folder) {
+    //create temp folder
+    if (!fs::exists(temp_folder)) fs::create_directory(temp_folder);
+    ifstream in1(qcontig_loc.c_str()), in2(rcontig_loc.c_str());
+    fs::path qp = qcontig_loc, rp = rcontig_loc;
+    qcontig_loc = temp_folder + "/" + qp.filename().string(), rcontig_loc = temp_folder + "/" + rp.filename().string();
+    ofstream out1(qcontig_loc.c_str()), out2(rcontig_loc.c_str());
     int num = 0;
     string line;
     while (getline(in1, line)) {
@@ -65,6 +112,7 @@ void cleanContig() {
         else out2 << line;
     }
     in2.close(); out2.close();
+    return make_tuple(qcontig_loc, rcontig_loc);
 }
 
 bool comp1(int a, int b) {return gene[abs(a)-1].l1 < gene[abs(b)-1].l1;}
@@ -96,7 +144,7 @@ void addGene(int contig_id, int gene_id, int setid) {
     }
 }
 
-void buildContig() {
+void buildContig(string temp_folder) {
     string coords_path = temp_folder + "/cssseq.coords";
     ifstream coords(coords_path.c_str());
     string line;
@@ -196,18 +244,80 @@ void reverseContig(string & s) {
 }
 
 
+
 int main (int argc, char * argv[])
 {
-// generate .coords file
-    checkFile(argc, argv);
-    cleanContig();
-    string cmd1 = "nucmer " + rcontig_file + " " + qcontig_file + " -p " + temp_folder + "/cssseq";
+    //setup variables
+    string input_folder = "./input", output_folder = "./output", temp_folder = "./temp", qcontig_file, rcontig_file;
+    vector<string> additional_files;
+    int c;
+    while (optind < argc){
+        if ((c = getopt(argc, argv, "i:o:t:h")) != -1) {
+            switch (c) {
+                case 'i':
+                    {
+                        string raw = optarg;
+                        string::iterator end_pos = remove(raw.begin(), raw.end(), ' ');
+                        raw.erase(end_pos, raw.end());
+                        input_folder = raw; break;
+                    }
+                case 'o':
+                    {
+                        string raw = optarg;
+                        string::iterator end_pos = remove(raw.begin(), raw.end(), ' ');
+                        raw.erase(end_pos, raw.end());
+                        output_folder = raw; break;
+                    }
+                case 't':
+                    {
+                        string raw = optarg;
+                        string::iterator end_pos = remove(raw.begin(), raw.end(), ' ');
+                        raw.erase(end_pos, raw.end());
+                        temp_folder = raw; break;
+                    }
+                case 'h': print_help(); break;
+                case '?': print_help(); break;
+                case ':': print_help(); break;
+            }
+        } else {
+            int input_counter = 0;
+            for (; optind < argc; optind++){
+                switch (input_counter) {
+                    case 0:
+                        qcontig_file = argv[optind];
+                        input_counter++;
+                        break;
+                    case 1:
+                        rcontig_file = argv[optind];
+                        input_counter++;
+                        break;
+                    default:
+                        //append to additional_files using inset() method
+                        additional_files.push_back(argv[optind]);
+                        input_counter++;
+                        break;
+                }
+            }
+        }
+    }
+    for (size_t i=0; i< additional_files.size(); i++) {
+        printf("ignoring additional file: %s\n", additional_files[i].c_str());
+    }
+    vector<string>().swap(additional_files);
+    verifyInput(argc, qcontig_file, rcontig_file, input_folder);
+    string qcontig_loc = input_folder + "/" + qcontig_file, rcontig_loc = input_folder + "/" + rcontig_file;
+    Ts contigs = sanitizeContig(qcontig_loc, rcontig_loc, temp_folder);
+    string cmd1 = "nucmer " + get<0>(contigs) + " " + get<1>(contigs) + " -p " + temp_folder + "/cssseq";
     string cmd2 = "delta-filter -r -q " + temp_folder + "/cssseq.delta > " + temp_folder + "/cssseq.filter";
     string cmd3 = "show-coords -l -d "  + temp_folder + "/cssseq.filter > " + temp_folder + "/cssseq.coords";
-    system(cmd1.c_str()); system(cmd2.c_str()); system(cmd3.c_str());
-// represent contig  as a linear permutation
-    buildContig();
-// make the most rings in the adjacency graph
+    //print cmd1 to cmd3
+    printf("%s\n%s\n%s\n", cmd1.c_str(), cmd2.c_str(), cmd3.c_str());
+    system(cmd1.c_str());
+    system(cmd2.c_str());
+    system(cmd3.c_str());
+    // represent contig  as a linear permutation
+    buildContig(temp_folder);
+    // make the most rings in the adjacency graph
     initLS();
     vis.resize(2*gene_num+1, false);
     rep(i,1,2*gene_num) {
@@ -221,7 +331,7 @@ int main (int argc, char * argv[])
             if (findRSet(tmp.fi) != findRSet(tmp.se)) unionRPath(tmp.fi, tmp.se);
         }
     }
-// Output scaffold file
+    // Output scaffold file
     ifstream input(qcontig_file.c_str());
     ofstream output((output_folder+"/scaffold.fasta").c_str());
     string line;
@@ -237,20 +347,79 @@ int main (int argc, char * argv[])
         output << ">Scaffold_" << ++scaffold_num << endl;
         qtelo[i] = false;
         int x = i;
-        do {
-            if (gene[abs(AntiMapping(x))-1].r1 == INF) line = contig[gene[abs(AntiMapping(x))-1].id].substr(gene[abs(AntiMapping(x))-1].l1-1);
-            else line = contig[gene[abs(AntiMapping(x))-1].id].substr(gene[abs(AntiMapping(x))-1].l1-1, gene[abs(AntiMapping(x))-1].r1-gene[abs(AntiMapping(x))-1].l1+1);
-            if (AntiMapping(x) < 0) reverseContig(line);
-            output << line;
-            temp.pb(abs(AntiMapping(x)));
-            sum_len += SZ(line);
-            x = qnxt[x];
-            ++g_num;
-        }while (qtelo[x] == false);
-        qtelo[x] = false;
-        output << endl;
+        try {
+            // code inside the do-while loop
+            do {
+                if (gene[abs(AntiMapping(x))-1].r1 == INF)
+                {
+                    // Get the gene ID
+                    int gene_id = abs(AntiMapping(x)) - 1;
+                    // Get the gene object
+                    const Gene& current_gene = gene[gene_id];
+                    // Get the contig ID
+                    int contig_id = current_gene.id;
+                    // Get the contig sequence
+                    const string& contig_seq = contig[contig_id];
+                    // Get the start position of the substring
+                    int start_pos = current_gene.l1 - 1;
+                    // Get the length of the substring
+                    int length = 1;
+
+                    // Get the substring of the contig sequence
+                    string line = contig_seq.substr(start_pos, length);
+                } else{
+                        // Get the gene ID
+                        int gene_id = abs(AntiMapping(x)) - 1;
+                        // Get the gene object
+                        Gene& current_gene = gene[gene_id];
+                        // Get the contig sequence
+                        const string& contig_seq = contig[current_gene.id];
+                        // Get the substring of the contig sequence
+                        int start_pos = current_gene.l1 - 1;
+                        int length = current_gene.r1 - current_gene.l1 + 1;
+                        string line = contig_seq.substr(start_pos, length);
+                    }
+                    if (AntiMapping(x) < 0){
+                        reverseContig(line);
+                    }
+                    output << line;
+                    temp.pb(abs(AntiMapping(x)));
+                    sum_len += SZ(line);
+                    x = qnxt[x];
+                    ++g_num;
+                }while (qtelo[x] == false);
+                qtelo[x] = false;
+                output << endl;
+            } catch (...)
+            {
+                // handle the out of range error here by printing all variables that may have caused it.
+                int x = i;
+                cout << "out of range error" << endl;
+                cout << "gene_num: " << gene_num << endl;
+                cout << "qtelo size: " << qtelo.size() << endl;
+                cout << "qnxt size: " << qnxt.size() << endl;
+                cout << "gene size: " << gene.size() << endl;
+                cout << "temp size: " << temp.size() << endl;
+                cout << "vis size: " << vis.size() << endl;
+                cout << "contig size: " << contig.size() << endl;
+                cout << "line: " << line << endl;
+                cout << "scaffold_num: " << scaffold_num << endl;
+                cout << "g_num: " << g_num << endl;
+                cout << "sum_len: " << sum_len << endl;
+                cout << "x: " << x << endl;
+                cout << "AntiMapping(x): " << AntiMapping(x) << endl;
+                cout << "abs(AntiMapping(x)): " << abs(AntiMapping(x)) << endl;
+            }
+        }
+        rep(i,0,q_size) if (SZ(qcontig[i]) == 0) output << ">Scaffold_" << ++scaffold_num << endl << contig[i] << endl;
+        output.close();
+        return 0;
     }
-    rep(i,0,q_size) if (SZ(qcontig[i]) == 0) output << ">Scaffold_" << ++scaffold_num << endl << contig[i] << endl;
-    output.close();
-    return 0;
-}
+
+    //clear temp folder
+    //rm -rf ./temp/*
+    void clearTempExit(string temp_folder, int exitCode) {
+        string cmd = "rm -rf " + temp_folder ;
+        system(cmd.c_str());
+        exit(exitCode);
+    }
