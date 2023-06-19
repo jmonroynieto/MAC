@@ -120,13 +120,9 @@ bool comp2(int a, int b) {return gene[abs(a)-1].l2 < gene[abs(b)-1].l2;}
 
 Vi findNumbers(string & line, Vi & inc) {
     Vi res, numarr;
-    int sz = SZ(line), num = 0;
-    rep(j,0,sz-1) {
-        if (isdigit(line[j])) {
-            num = num*10+(line[j]-'0');
-            if (j+1 == sz || !isdigit(line[j+1])) numarr.pb(num), num = 0;
-        }
-    }
+    istringstream iss(line);
+    int num;
+    while (iss >> num) numarr.pb(num);
     for (auto i: inc) res.pb(numarr[i-1]);
     return res;
 }
