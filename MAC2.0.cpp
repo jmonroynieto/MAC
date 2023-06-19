@@ -22,27 +22,42 @@ typedef tuple<string, string> Ts;
 
 void print_help() {
     printf("Usage: ./program [OPTIONS] qcontig_filename rcontig_name\n\n\
-            Options:\n\
-            -i input_folder   overwrite the input folder (default: ./input)\n\
-            -o output_folder  Overwrite the output folder (default: ./output)\n\
-            -t temp_folder    overwrite the temporary folder (default: ./temp)\n\
-            Description:\n\
-            Merging assemblies by using adjacency algebraic\n\
-            model and classification. This program operates\n\
-            only on two files, additional files will be ignored.\n\
-            Citation:\n\
-            Tang L, Li M, Wu F-X, Pan Y and Wang J (2020)\n\
-            MAC: Merging Assemblies by Using Adjacency\n\
-            Algebraic Model and Classification. Front.\n\
-            Genet. 10:1396. doi: 10.3389/fgene.2019.01396\n\
-            Copyright © 2023 <bioinfomaticsCSU>\n");
+Options:\n\
+    -i input_folder   overwrite the input folder (default: ./input)\n\
+    -o output_folder  Overwrite the output folder (default: ./output)\n\
+    -t temp_folder    overwrite the temporary folder (default: ./temp)\n\
+    -v print version\n\
+    -h prints this help message\n\n\
+Description:\n\
+    Merging assemblies by using adjacency algebraic\n\
+    model and classification. This program operates\n\
+    only on two files, additional files will be ignored.\n\n\
+Citation:\n\
+    Tang L, Li M, Wu F-X, Pan Y and Wang J (2020)\n\
+    MAC: Merging Assemblies by Using Adjacency\n\
+    Algebraic Model and Classification. Front.\n\
+    Genet. 10:1396. doi: 10.3389/fgene.2019.01396\n\n\
+Copyright © 2023 <bioinfomaticsCSU>\n");
     exit(0);
 }
 
-//globals
-struct Gene{int l1, r1, l2, r2, id;};
-vector<Gene> gene;
+void print_version() {
+    printf("MAC2.2\n");
+    exit(0);
+}
+
+//Globals
+
+//indexed by id(query)-1
+// reference --l1-----------r1-------
+// query --l2-----------r2-----------
+struct match{int l1, r1, l2, r2, id;};
+//Collection of matches in the same order as coordinates
+vector<match> matches;
+//Collection of matches aggregated by contig
 vector<Vi> qcontig, rcontig;
+
+
 Vi qpre, qnxt, rpre, rnxt, qds, rds;
 vector<bool> qtelo, rtelo, vis;
 vector<string> contig;
@@ -115,44 +130,85 @@ Ts sanitizeContig(string qcontig_loc, string rcontig_loc,  string temp_folder) {
     return make_tuple(qcontig_loc, rcontig_loc);
 }
 
-bool comp1(int a, int b) {return gene[abs(a)-1].l1 < gene[abs(b)-1].l1;}
-bool comp2(int a, int b) {return gene[abs(a)-1].l2 < gene[abs(b)-1].l2;}
+bool comp1(int a, int b) {return matches[abs(a)-1].l1 < matches[abs(b)-1].l1;}
+bool comp2(int a, int b) {return matches[abs(a)-1].l2 < matches[abs(b)-1].l2;}
 
 Vi findNumbers(string & line, Vi & inc) {
     Vi res, numarr;
+    std::regex nonnum("[^0-9]+");
+    line = regex_replace(line, nonnum, " ");
     istringstream iss(line);
     int num;
-    while (iss >> num) numarr.pb(num);
+    while (iss >> num) {
+        numarr.pb(num);
+    }
     for (auto i: inc) res.pb(numarr[i-1]);
     return res;
 }
 
-void addGene(int contig_id, int gene_id, int setid) {
+struct alignmentInfo {
+    int l1, r1, l2, r2, contig_idx, sense, id1, id2;
+    match g;
+};
+
+alignmentInfo extract_algn(string line) {
+    alignmentInfo res;
+    //Spec: https://mummer4.github.io/manual/manual.html#:~:text=the%20consensus%20line.-,show%2Dcoords,-Description
+    //1 = Start of the alignment region in the reference sequence
+    //2 = End of the alignment region in the reference sequence
+    //3 = Start of the alignment region in the query sequence
+    //4 = End of the alignment region in the query sequence
+    //12 = reading frame for the query sequence
+    //13 = reference FastA ID
+    //14 = query FastA ID
+    Vi inc = {1,2,3,4,12,13,14};
+    Vi extract = findNumbers(line, inc);
+    res.l1 = min(extract[2],extract[3]);
+    res.r1 = max(extract[2],extract[3]);
+    res.r2 = min(extract[0],extract[1]);
+    res.l2 = max(extract[0],extract[1]);
+    res.id1 = extract[5];
+    res.id2 = extract[6];
+    res.sense = extract[5];
+    res.contig_idx = extract[6]-1;
+    res.g = match{res.r1, res.r2, res.l1, res.l2, res.contig_idx};
+
+};
+
+
+// setid 1 is qcontig, 2 is rcontig
+void add_gene(int contig_idx,int gene_id, int setid) {
     if (setid == 1) {
-        rep(i,q_size+1,contig_id) qcontig.pb(Vi());
-        q_size = max(q_size, contig_id);
-        qcontig[contig_id].pb(gene_id);
+        rep(i,q_size+1,contig_idx) qcontig.pb(Vi());
+        q_size = max(q_size, contig_idx);
+        qcontig[contig_idx].pb(gene_id);
     }
     else {
-        rep(i,r_size+1,contig_id) rcontig.pb(Vi());
-        r_size = max(r_size, contig_id);
-        rcontig[contig_id].pb(gene_id);
+        rep(i,r_size+1,contig_idx) rcontig.pb(Vi());
+        r_size = max(r_size, contig_idx);
+        rcontig[contig_idx].pb(gene_id);
     }
 }
+
+
+
 
 void buildContig(string temp_folder) {
     string coords_path = temp_folder + "/cssseq.coords";
     ifstream coords(coords_path.c_str());
     string line;
-    Vi inc = {1,2,3,4,13,14};
+
     int invaild_line = 5;
-    while (invaild_line && getline(coords, line)) --invaild_line;
+    while (invaild_line && getline(coords, line))
+        --invaild_line;
+    alignmentInfo my_ai;
     while (getline(coords, line)) {
-        Vi align_info = findNumbers(line, inc);
-        gene.pb(Gene{min(align_info[2],align_info[3]), max(align_info[2],align_info[3]), min(align_info[0],align_info[1]), max(align_info[0],align_info[1]), align_info[5]-1});
+        my_ai = extract_algn(line);
         ++gene_num;
-        addGene(align_info[4], gene_num*(align_info[2]>align_info[3]?-1:1), 2);
-        addGene(align_info[5], gene_num, 1);
+        matches.pb(my_ai.g);
+        //sets r_size and q_size
+        add_gene(my_ai.id1, gene_num*my_ai.sense, 2);
+        add_gene(my_ai.id2, gene_num, 1);
     }
     coords.close();
     rep(i,0,q_size) sort(all(qcontig[i]), comp1);
@@ -160,9 +216,9 @@ void buildContig(string temp_folder) {
     rep(i,0,q_size) {
         int sz = SZ(qcontig[i]);
         rep(j,0,sz-1) {
-            if (j == 0) gene[qcontig[i][j]-1].l1 = min(gene[qcontig[i][j]-1].l1, 1);
-            else gene[qcontig[i][j]-1].l1 = min(gene[qcontig[i][j]-1].l1, gene[qcontig[i][j-1]-1].r1+1);
-            if (j == sz-1) gene[qcontig[i][j]-1].r1 = INF;
+            if (j == 0) matches[qcontig[i][j]-1].l1 = min(matches[qcontig[i][j]-1].l1, 1);
+            else matches[qcontig[i][j]-1].l1 = min(matches[qcontig[i][j]-1].l1, matches[qcontig[i][j-1]-1].r1+1);
+            if (j == sz-1) matches[qcontig[i][j]-1].r1 = INF;
         }
     }
 }
@@ -346,12 +402,12 @@ int main (int argc, char * argv[])
         try {
             // code inside the do-while loop
             do {
-                if (gene[abs(AntiMapping(x))-1].r1 == INF)
+                if (matches[abs(AntiMapping(x))-1].r1 == INF)
                 {
                     // Get the gene ID
                     int gene_id = abs(AntiMapping(x)) - 1;
                     // Get the gene object
-                    const Gene& current_gene = gene[gene_id];
+                    const match& current_gene = matches[gene_id];
                     // Get the contig ID
                     int contig_id = current_gene.id;
                     // Get the contig sequence
@@ -367,7 +423,7 @@ int main (int argc, char * argv[])
                     // Get the gene ID
                     int gene_id = abs(AntiMapping(x)) - 1;
                     // Get the gene object
-                    Gene& current_gene = gene[gene_id];
+                    match& current_gene = matches[gene_id];
                     // Get the contig sequence
                     const string& contig_seq = contig[current_gene.id];
                     // Get the substring of the contig sequence
@@ -394,7 +450,7 @@ int main (int argc, char * argv[])
             cout << "gene_num: " << gene_num << endl;
             cout << "qtelo size: " << qtelo.size() << endl;
             cout << "qnxt size: " << qnxt.size() << endl;
-            cout << "gene size: " << gene.size() << endl;
+            cout << "gene size: " << matches.size() << endl;
             cout << "temp size: " << temp.size() << endl;
             cout << "vis size: " << vis.size() << endl;
             cout << "contig size: " << contig.size() << endl;
