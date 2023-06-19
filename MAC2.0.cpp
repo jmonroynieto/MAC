@@ -364,58 +364,58 @@ int main (int argc, char * argv[])
                     // Get the substring of the contig sequence
                     string line = contig_seq.substr(start_pos, length);
                 } else{
-                        // Get the gene ID
-                        int gene_id = abs(AntiMapping(x)) - 1;
-                        // Get the gene object
-                        Gene& current_gene = gene[gene_id];
-                        // Get the contig sequence
-                        const string& contig_seq = contig[current_gene.id];
-                        // Get the substring of the contig sequence
-                        int start_pos = current_gene.l1 - 1;
-                        int length = current_gene.r1 - current_gene.l1 + 1;
-                        string line = contig_seq.substr(start_pos, length);
-                    }
-                    if (AntiMapping(x) < 0){
-                        reverseContig(line);
-                    }
-                    output << line;
-                    temp.pb(abs(AntiMapping(x)));
-                    sum_len += SZ(line);
-                    x = qnxt[x];
-                    ++g_num;
-                }while (qtelo[x] == false);
-                qtelo[x] = false;
-                output << endl;
-            } catch (...)
-            {
-                // handle the out of range error here by printing all variables that may have caused it.
-                int x = i;
-                cout << "out of range error" << endl;
-                cout << "gene_num: " << gene_num << endl;
-                cout << "qtelo size: " << qtelo.size() << endl;
-                cout << "qnxt size: " << qnxt.size() << endl;
-                cout << "gene size: " << gene.size() << endl;
-                cout << "temp size: " << temp.size() << endl;
-                cout << "vis size: " << vis.size() << endl;
-                cout << "contig size: " << contig.size() << endl;
-                cout << "line: " << line << endl;
-                cout << "scaffold_num: " << scaffold_num << endl;
-                cout << "g_num: " << g_num << endl;
-                cout << "sum_len: " << sum_len << endl;
-                cout << "x: " << x << endl;
-                cout << "AntiMapping(x): " << AntiMapping(x) << endl;
-                cout << "abs(AntiMapping(x)): " << abs(AntiMapping(x)) << endl;
-            }
+                    // Get the gene ID
+                    int gene_id = abs(AntiMapping(x)) - 1;
+                    // Get the gene object
+                    Gene& current_gene = gene[gene_id];
+                    // Get the contig sequence
+                    const string& contig_seq = contig[current_gene.id];
+                    // Get the substring of the contig sequence
+                    int start_pos = current_gene.l1 - 1;
+                    int length = current_gene.r1 - current_gene.l1 + 1;
+                    string line = contig_seq.substr(start_pos, length);
+                }
+                if (AntiMapping(x) < 0){
+                    reverseContig(line);
+                }
+                output << line;
+                temp.pb(abs(AntiMapping(x)));
+                sum_len += SZ(line);
+                x = qnxt[x];
+                ++g_num;
+            }while (qtelo[x] == false);
+            qtelo[x] = false;
+            output << endl;
+        } catch (...)
+        {
+            // handle the out of range error here by printing all variables that may have caused it.
+            int x = i;
+            cout << "out of range error" << endl;
+            cout << "gene_num: " << gene_num << endl;
+            cout << "qtelo size: " << qtelo.size() << endl;
+            cout << "qnxt size: " << qnxt.size() << endl;
+            cout << "gene size: " << gene.size() << endl;
+            cout << "temp size: " << temp.size() << endl;
+            cout << "vis size: " << vis.size() << endl;
+            cout << "contig size: " << contig.size() << endl;
+            cout << "line: " << line << endl;
+            cout << "scaffold_num: " << scaffold_num << endl;
+            cout << "g_num: " << g_num << endl;
+            cout << "sum_len: " << sum_len << endl;
+            cout << "x: " << x << endl;
+            cout << "AntiMapping(x): " << AntiMapping(x) << endl;
+            cout << "abs(AntiMapping(x)): " << abs(AntiMapping(x)) << endl;
         }
-        rep(i,0,q_size) if (SZ(qcontig[i]) == 0) output << ">Scaffold_" << ++scaffold_num << endl << contig[i] << endl;
-        output.close();
-        return 0;
     }
+    rep(i,0,q_size) if (SZ(qcontig[i]) == 0) output << ">Scaffold_" << ++scaffold_num << endl << contig[i] << endl;
+    output.close();
+    return 0;
+}
 
-    //clear temp folder
-    //rm -rf ./temp/*
-    void clearTempExit(string temp_folder, int exitCode) {
-        string cmd = "rm -rf " + temp_folder ;
-        system(cmd.c_str());
-        exit(exitCode);
-    }
+//clear temp folder
+//rm -rf ./temp/*
+void clearTempExit(string temp_folder, int exitCode) {
+    string cmd = "rm -rf " + temp_folder ;
+    system(cmd.c_str());
+    exit(exitCode);
+}
